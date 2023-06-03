@@ -1,15 +1,7 @@
 #!/bin/bash
 
 # 获取所有静态 IP 地址
-ips=$(aws lightsail get-static-ips --query 'staticIps[*].[name]' --output text)
-
-# 保存当前的 IFS 值，以便之后可以恢复
-OLDIFS=$IFS
-# 设置 IFS 为换行符
-IFS=$'\n'
-
-# 遍历每个 IP
-for ip_name in $ips
+aws lightsail get-static-ips --query 'staticIps[*].[name]' --output text | while read -r ip_name
 do
   # 首先解除实例关联
   instance=$(aws lightsail get-static-ip --static-ip-name $ip_name --query 'staticIp.attachedTo' --output text)
@@ -24,21 +16,20 @@ do
   aws lightsail release-static-ip --static-ip-name $ip_name
 done
 
-# 恢复原来的 IFS 值
-IFS=$OLDIFS
-
 # Wait for 5 seconds
 sleep 5s
 
 # Stop instances
-aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -I {} aws lightsail stop-instance --instance-name {}
+aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -P 4 -I {} aws lightsail stop-instance --instance-name {}
 
 # Wait for 30 seconds
 sleep 30s
 
 # Start instances
-aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -I {} aws lightsail start-instance --instance-name {}
+aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -P 4 -I {} aws lightsail start-instance --instance-name {}
 
 # Wait for 60 seconds
 sleep 60s
+
+# Display instance names and public IP addresses
 aws lightsail get-instances --query "instances[*].[name, publicIpAddress]" --output json | jq -r '.[] | @tsv' | sort
