@@ -51,7 +51,7 @@ echo "$instance_names" | xargs --no-run-if-empty -P 4 -I {} bash -c '{
 }'
 
 # 等待实例启动
-sleep 45s
+sleep 30s
 
 # 显示实例名称和公共 IP 地址
 aws lightsail get-instances --query "instances[*].[name, publicIpAddress]" --output json | jq -r '.[] | @tsv' | sort
