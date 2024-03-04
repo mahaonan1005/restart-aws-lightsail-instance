@@ -1,54 +1,32 @@
 #!/bin/bash
 
-# 记录脚本开始运行的时间
-start=$(date +%s)
+# Assumes you have AWS CLI configured and jq installed
 
-# 获取所有静态 IP 地址
-ips=$(aws lightsail get-static-ips --query 'staticIps[*].[name]' --output text)
+# Start time measurement
+start_time=$(date +%s)
 
-# 保存当前的 IFS 值，以便之后可以恢复
-OLDIFS=$IFS
-# 设置 IFS 为换行符
-IFS=$'\n'
-
-# 遍历每个 IP
-for ip_name in $ips
+# Fetch and delete existing static IPs 
+aws lightsail get-static-ips --query 'staticIps[*].[name]' --output text | while read -r ip_name
 do
-  # 首先解除实例关联
-  instance=$(aws lightsail get-static-ip --static-ip-name $ip_name --query 'staticIp.attachedTo' --output text)
-  
-  if [ "$instance" != "None" ]; then
-    echo "Detaching $ip_name from $instance..."
-    aws lightsail detach-static-ip --static-ip-name $ip_name
-  fi
-
-  # 如果 IP 存在，则删除
   echo "Deleting $ip_name..."
   aws lightsail release-static-ip --static-ip-name $ip_name
 done
 
-# 恢复原来的 IFS 值
-IFS=$OLDIFS
+# Get instance names
+instance_names=$(aws lightsail get-instances | jq -r '.instances[] | .name')
 
-# Wait for 5 seconds
-sleep 5s
+# Stop instances in parallel
+echo "$instance_names" | xargs --no-run-if-empty -P 8 -I {} aws lightsail stop-instance --instance-name {}
 
-# Stop instances
-aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -I {} aws lightsail stop-instance --instance-name {}
+# Start instances in parallel
+echo "$instance_names" | xargs --no-run-if-empty -P 8 -I {} aws lightsail start-instance --instance-name {}
 
-# Wait for 70 seconds
-sleep 70s
-
-# Start instances
-aws lightsail get-instances | jq -r '.instances[] | .name' | xargs -I {} aws lightsail start-instance --instance-name {}
-
-# Wait for 30 seconds
-sleep 30s
+# Display instance names and new public IP addresses
 aws lightsail get-instances --query "instances[*].[name, publicIpAddress]" --output json | jq -r '.[] | @tsv' | sort
 
-# 记录脚本结束运行的时间
-end=$(date +%s)
+# End time measurement
+end_time=$(date +%s)
 
-# 计算并输出脚本运行的时长
-duration=$((end - start))
-echo "The script ran for $duration seconds."
+# Calculate and display elapsed time
+elapsed_time=$(( end_time - start_time ))
+echo "Total execution time: $elapsed_time seconds" 
